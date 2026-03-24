@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Data
+data/raw/
+data/interim/
+data/processed/
+
+# Models
+models/checkpoints/
+*.pt
+
+# OS
+.DS_Store
+
+# Large files
+*.tar.gz
