@@ -28,7 +28,7 @@ def main():
     trainer = trainers.BpeTrainer(
         vocab_size=32000,
         min_frequency=2,
-        special_tokens=["[UNK]", "[PAD]", "[BOS]", "[EOS]"],
+        special_tokens=["[UNK]", "[PAD]", "[BOS]", "[EOS]", "[SEP]"],
         show_progress=True,
     )
 

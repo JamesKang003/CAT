@@ -1,5 +1,7 @@
 import pickle
+import re
 from pathlib import Path
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -13,10 +15,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 TOKENIZER_PATH = BASE_DIR / "models" / "tokenizer.json"
 META_PATH = BASE_DIR / "data" / "processed" / "meta.pkl"
 
-# 보통 best checkpoint부터 보는 게 맞다.
+# 기본은 best checkpoint
 CKPT_PATH = BASE_DIR / "models" / "checkpoints" / "ckpt.pt"
-# 필요하면 final로 바꿔도 됨:
-# CKPT_PATH = BASE_DIR / "models" / "checkpoints" / "cat_final.pt"
+# 이어학습 final 보고 싶으면 이걸로 바꿔도 됨:
+# CKPT_PATH = BASE_DIR / "models" / "checkpoints" / "cat_resumed_final.pt"
 
 
 def get_device() -> torch.device:
@@ -30,12 +32,39 @@ def load_meta():
         return pickle.load(f)
 
 
-def top_k_filter(logits: torch.Tensor, k: int | None):
+def top_k_filter(logits: torch.Tensor, k: Optional[int]):
     if k is None:
         return logits
     v, _ = torch.topk(logits, min(k, logits.size(-1)))
     logits[logits < v[:, [-1]]] = float("-inf")
     return logits
+
+
+def apply_repetition_penalty(
+    logits: torch.Tensor,
+    generated_ids: torch.Tensor,
+    penalty: float,
+) -> torch.Tensor:
+    if penalty == 1.0:
+        return logits
+
+    for batch_idx in range(logits.size(0)):
+        seen_tokens = set(generated_ids[batch_idx].tolist())
+        for token_id in seen_tokens:
+            if logits[batch_idx, token_id] < 0:
+                logits[batch_idx, token_id] *= penalty
+            else:
+                logits[batch_idx, token_id] /= penalty
+
+    return logits
+
+
+def clean_generated_text(text: str) -> str:
+    text = text.replace("Ġ", " ")
+    text = text.replace("Ċ", "\n")
+    text = text.replace("âĢĵ", "-")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 @torch.no_grad()
@@ -44,9 +73,10 @@ def generate(
     idx: torch.Tensor,
     max_new_tokens: int,
     block_size: int,
-    temperature: float = 1.0,
-    top_k: int | None = 50,
-    eos_id: int | None = None,
+    temperature: float = 0.7,
+    top_k: Optional[int] = 40,
+    repetition_penalty: float = 1.15,
+    eos_id: Optional[int] = None,
 ):
     model.eval()
 
@@ -54,7 +84,13 @@ def generate(
         idx_cond = idx[:, -block_size:]
 
         logits, _ = model(idx_cond)
-        logits = logits[:, -1, :] / temperature
+        logits = logits[:, -1, :]
+
+        if temperature <= 0:
+            raise ValueError("temperature must be > 0")
+
+        logits = logits / temperature
+        logits = apply_repetition_penalty(logits, idx, repetition_penalty)
         logits = top_k_filter(logits, top_k)
 
         probs = F.softmax(logits, dim=-1)
@@ -69,10 +105,14 @@ def generate(
 
 
 def decode_generated(
-    tokenizer: Tokenizer, ids: list[int], bos_id: int, eos_id: int
+    tokenizer: Tokenizer,
+    ids: list[int],
+    bos_id: int,
+    eos_id: int,
 ) -> str:
     filtered = [i for i in ids if i not in (bos_id, eos_id)]
     text = tokenizer.decode(filtered, skip_special_tokens=True)
+    text = clean_generated_text(text)
     return text.strip()
 
 
@@ -83,14 +123,11 @@ def main():
     tokenizer = Tokenizer.from_file(str(TOKENIZER_PATH))
     meta = load_meta()
 
-    vocab_size = meta["vocab_size"]
     bos_id = meta["bos_id"]
     eos_id = meta["eos_id"]
 
     checkpoint = torch.load(CKPT_PATH, map_location=device)
-
-    config_dict = checkpoint["config"]
-    config = CATConfig(**config_dict)
+    config = CATConfig(**checkpoint["config"])
 
     model = CATModel(config)
     model.load_state_dict(checkpoint["model_state_dict"])
@@ -98,7 +135,7 @@ def main():
     model.eval()
 
     print(f"Loaded checkpoint from: {CKPT_PATH}")
-    print(f"Vocab size: {vocab_size}")
+    print(f"Vocab size: {meta['vocab_size']}")
     print(f"Block size: {config.block_size}")
 
     prompts = [
@@ -109,9 +146,10 @@ def main():
         "The findings suggest that early intervention may improve",
     ]
 
-    max_new_tokens = 120
-    temperature = 0.8
-    top_k = 50
+    max_new_tokens = 80
+    temperature = 0.65
+    top_k = 40
+    repetition_penalty = 1.20
 
     for i, prompt in enumerate(prompts, 1):
         print("\n" + "=" * 100)
@@ -129,6 +167,7 @@ def main():
             block_size=config.block_size,
             temperature=temperature,
             top_k=top_k,
+            repetition_penalty=repetition_penalty,
             eos_id=eos_id,
         )
 
