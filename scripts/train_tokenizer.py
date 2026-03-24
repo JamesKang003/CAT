@@ -1,5 +1,5 @@
 from pathlib import Path
-from tokenizers import Tokenizer, models, trainers, pre_tokenizers
+from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -23,9 +23,10 @@ def main():
 
     tokenizer = Tokenizer(models.BPE(unk_token="[UNK]"))
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+    tokenizer.decoder = decoders.ByteLevel()
 
     trainer = trainers.BpeTrainer(
-        vocab_size=16384,
+        vocab_size=32000,
         min_frequency=2,
         special_tokens=["[UNK]", "[PAD]", "[BOS]", "[EOS]"],
         show_progress=True,

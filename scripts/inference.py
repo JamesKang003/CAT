@@ -72,7 +72,7 @@ def decode_generated(
     tokenizer: Tokenizer, ids: list[int], bos_id: int, eos_id: int
 ) -> str:
     filtered = [i for i in ids if i not in (bos_id, eos_id)]
-    text = tokenizer.decode(filtered)
+    text = tokenizer.decode(filtered, skip_special_tokens=True)
     return text.strip()
 
 

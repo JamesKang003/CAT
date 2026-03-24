@@ -163,9 +163,6 @@ def main():
     meta = load_meta()
     print("Loaded meta:", meta)
 
-    if meta["vocab_size"] != 16384:
-        raise ValueError(f"Expected vocab_size 16384, got {meta['vocab_size']}")
-
     train_data, val_data, test_data = load_token_arrays()
 
     config = CATConfig(
