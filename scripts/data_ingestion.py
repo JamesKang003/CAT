@@ -182,8 +182,8 @@ def main() -> None:
     n_test = n_total - n_train - n_val
 
     train_docs = [text for _, text in records[:n_train]]
-    val_docs = [text for _, text in records[n_train:n_train + n_val]]
-    test_docs = [text for _, text in records[n_train + n_val:]]
+    val_docs = [text for _, text in records[n_train : n_train + n_val]]
+    test_docs = [text for _, text in records[n_train + n_val :]]
 
     write_split(INTERIM_DIR / "train_raw.txt", train_docs)
     write_split(INTERIM_DIR / "val_raw.txt", val_docs)
