@@ -1,19 +1,50 @@
+# =========================
 # Python
+# =========================
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 venv/
+.env
 
+# =========================
+# OS
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Jupyter / Colab
+# =========================
+.ipynb_checkpoints/
+
+# =========================
 # Data
+# =========================
 data/raw/
 data/interim/
 data/processed/
 
-# Models
+# =========================
+# Models 
+# =========================
 models/checkpoints/
 *.pt
 
-# OS
-.DS_Store
+# tokenizer는 선택 (작아서 올려도 됨)
+# 필요하면 아래 줄 주석 해제
+# models/tokenizer.json
 
+# =========================
 # Large files
+# =========================
+*.zip
+*.tar
 *.tar.gz
+
+# =========================
+# Logs / outputs
+# =========================
+*.log
+results.txt
