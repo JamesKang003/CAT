@@ -16,7 +16,7 @@ TOKENIZER_PATH = BASE_DIR / "models" / "tokenizer.json"
 META_PATH = BASE_DIR / "data" / "processed" / "meta.pkl"
 
 # 기본은 best checkpoint
-CKPT_PATH = BASE_DIR / "models" / "checkpoints" / "ckpt.pt"
+CKPT_PATH = BASE_DIR / "models" / "checkpoints" / "ckpt_v2.pt"
 # 이어학습 final 보고 싶으면 이걸로 바꿔도 됨:
 # CKPT_PATH = BASE_DIR / "models" / "checkpoints" / "cat_resumed_final.pt"
 
