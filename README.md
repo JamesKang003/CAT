@@ -131,17 +131,20 @@ Without fixing data leakage:
 ---
 
 ## Architecture
+
+```
 Raw PMC XML
-↓
+   ↓
 Data Ingestion (XML Parsing, Cleaning)
-↓
+   ↓
 Tokenizer (Byte-Level + Custom Vocab)
-↓
+   ↓
 Chunking & Structuring
-↓
+   ↓
 Training Pipeline (PyTorch)
-↓
+   ↓
 Evaluation (Leakage-Free Split)
+```
 
 ---
 
@@ -199,7 +202,7 @@ It depends on:
 ---
 
 ## Repository Structure
-
+```
 CAT/
 ├── scripts/
 │ ├── train.py
@@ -215,7 +218,7 @@ CAT/
 │ ├── processed/
 │
 └── README.md
-
+```
 ---
 
 ## Summary
