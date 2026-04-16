@@ -4,6 +4,22 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Iterable, Optional
 
+"""
+PMC Data Ingestion Pipeline (V2)
+
+This script constructs a training dataset from raw PubMed Central (PMC) XML articles.
+
+Core responsibilities:
+- Parse biomedical XML articles into structured text
+- Remove structural artifacts (e.g., citation patterns)
+- Construct coherent text chunks from article-local content
+- Perform article-level train/validation/test splitting to prevent data leakage
+
+Design rationale:
+Chunks are generated within each article before splitting, ensuring that
+no segments derived from the same source document are distributed across splits.
+This enforces document-level independence during model evaluation.
+"""
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_DIR = BASE_DIR / "data" / "raw" / "PMC001xxxxxx"
