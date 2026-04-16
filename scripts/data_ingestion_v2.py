@@ -1,25 +1,26 @@
+"""
+PMC Data Ingestion Pipeline (V2)
+
+Builds train/validation/test text corpora from raw PubMed Central (PMC) XML files.
+
+Responsibilities:
+- parse article XML into clean text paragraphs
+- remove common structural artifacts from extracted text
+- build training chunks from article-local content
+- split the dataset at the article level to reduce cross-split contamination
+
+Design note:
+Chunking is performed within each article before the train/validation/test split.
+This ensures that chunks derived from the same source article remain grouped
+together and are not distributed across multiple splits.
+"""
+
 import random
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Iterable, Optional
 
-"""
-PMC Data Ingestion Pipeline (V2)
-
-This script constructs a training dataset from raw PubMed Central (PMC) XML articles.
-
-Core responsibilities:
-- Parse biomedical XML articles into structured text
-- Remove structural artifacts (e.g., citation patterns)
-- Construct coherent text chunks from article-local content
-- Perform article-level train/validation/test splitting to prevent data leakage
-
-Design rationale:
-Chunks are generated within each article before splitting, ensuring that
-no segments derived from the same source document are distributed across splits.
-This enforces document-level independence during model evaluation.
-"""
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_DIR = BASE_DIR / "data" / "raw" / "PMC001xxxxxx"
@@ -32,8 +33,8 @@ RANDOM_SEED = 42
 
 MIN_PARAGRAPH_CHARS = 60
 
-# Chunk-size heuristics chosen to preserve enough local context for training
-# while keeping documents manageable for local hardware.
+# Practical chunk-size heuristics chosen to preserve local semantic coherence
+# while keeping samples manageable for local training.
 MIN_CHUNK_CHARS = 400
 MAX_CHUNK_CHARS = 1400
 TARGET_CHUNK_CHARS = 900
@@ -42,27 +43,28 @@ SEP_TOKEN = "[SEP]"
 
 
 def normalize_whitespace(text: str) -> str:
-    """Collapse repeated whitespace into single spaces and trim the result."""
+    """Collapse repeated whitespace and trim the result."""
     return re.sub(r"\s+", " ", text).strip()
 
 
 def get_local_tag(tag: str) -> str:
-    """Remove the XML namespace prefix so tags can be compared consistently."""
+    """Strip XML namespace prefixes so tags can be matched consistently."""
     return tag.split("}", 1)[1] if "}" in tag else tag
 
 
 def iter_xml_files(root: Path) -> Iterable[Path]:
-    """Yield all XML/NXML article files recursively under the raw PMC directory."""
+    """Yield all XML/NXML files under the raw PMC directory."""
     for ext in ("*.xml", "*.nxml"):
         yield from root.rglob(ext)
 
 
 def clean_text(text: str) -> str:
     """
-    Normalize extracted XML text for downstream chunking.
+    Normalize extracted XML text before chunk construction.
 
-    This step removes common citation-style references and figure/table mentions,
-    filters non-printable characters, and standardizes whitespace.
+    This step removes common citation-like patterns, filters non-printable
+    characters, and standardizes whitespace so downstream chunking operates
+    on cleaner article text.
     """
     text = text.replace("\x00", " ")
     text = re.sub(r"\[\s*\d+(?:\s*[-,]\s*\d+)*\s*\]", " ", text)
@@ -72,7 +74,7 @@ def clean_text(text: str) -> str:
 
 
 def extract_title(root: ET.Element) -> Optional[str]:
-    """Extract and clean the article title if one is present."""
+    """Extract and clean the article title, if present."""
     for elem in root.iter():
         if get_local_tag(elem.tag) == "article-title":
             title = clean_text("".join(elem.itertext()))
@@ -83,10 +85,9 @@ def extract_title(root: ET.Element) -> Optional[str]:
 
 def extract_paragraphs(section_elem: ET.Element) -> list[str]:
     """
-    Extract paragraph text from an XML section.
+    Extract paragraph text from one XML section.
 
-    Only paragraphs above the minimum length threshold are kept so that very short
-    fragments do not dominate the downstream chunking process.
+    Very short fragments are excluded so they do not dominate the chunking stage.
     """
     paragraphs = []
     for elem in section_elem.iter():
@@ -100,10 +101,10 @@ def extract_paragraphs(section_elem: ET.Element) -> list[str]:
 
 def extract_article_paragraphs(xml_path: Path) -> Optional[list[str]]:
     """
-    Parse one PMC article and collect the title, abstract paragraphs, and body paragraphs.
+    Parse a single PMC article into an ordered list of cleaned text segments.
 
-    The returned list preserves article-local ordering and is later chunked without
-    mixing content across source documents.
+    The returned list preserves article-local structure by collecting the title,
+    abstract paragraphs, and body paragraphs from the same source document.
     """
     try:
         tree = ET.parse(xml_path)
@@ -146,10 +147,10 @@ def extract_article_paragraphs(xml_path: Path) -> Optional[list[str]]:
 
 def split_long_paragraph(paragraph: str, max_chars: int) -> list[str]:
     """
-    Split oversized paragraphs into sentence-based segments.
+    Split oversized paragraphs into smaller sentence-based segments.
 
-    This keeps extremely long paragraphs from creating oversized training chunks
-    while preserving sentence boundaries when possible.
+    This prevents unusually long paragraphs from producing oversized training
+    chunks while preserving sentence boundaries when possible.
     """
     if len(paragraph) <= max_chars:
         return [paragraph]
@@ -175,11 +176,11 @@ def split_long_paragraph(paragraph: str, max_chars: int) -> list[str]:
 
 def build_chunks(paragraphs: list[str]) -> list[str]:
     """
-    Build chunked training documents from article-local paragraphs.
+    Construct article-local chunks for model training.
 
-    The chunker first expands oversized paragraphs, then packs adjacent text into
-    target-sized chunks separated by SEP tokens. This process is performed within
-    a single article only, so chunk boundaries never cross source-document boundaries.
+    Oversized paragraphs are split first, then adjacent text is packed toward a
+    target chunk size using SEP_TOKEN as a separator. Chunk construction happens
+    entirely within one article, so chunk boundaries never cross source documents.
     """
     expanded = []
     for p in paragraphs:
@@ -218,7 +219,7 @@ def build_chunks(paragraphs: list[str]) -> list[str]:
 
 
 def write_split(path: Path, docs: list[str]) -> None:
-    """Write one split to disk as one normalized chunk per line."""
+    """Write one dataset split to disk, one normalized chunk per line."""
     with path.open("w", encoding="utf-8") as f:
         for doc in docs:
             f.write(normalize_whitespace(doc) + "\n")
@@ -226,14 +227,14 @@ def write_split(path: Path, docs: list[str]) -> None:
 
 def main() -> None:
     """
-    Run the full PMC ingestion pipeline.
+    Execute the full ingestion pipeline from raw PMC XML to split text files.
 
-    Pipeline summary:
-    1. Discover raw XML/NXML articles.
-    2. Parse each article into article-local paragraphs.
-    3. Build chunks without mixing content across source documents.
-    4. Shuffle and split at the article level.
-    5. Flatten chunks only after the train/val/test split is finalized.
+    Processing order:
+    1. discover XML/NXML articles
+    2. extract article-local text
+    3. build chunks within each article
+    4. shuffle and split at the article level
+    5. flatten chunks only after split assignment
     """
     INTERIM_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -252,7 +253,7 @@ def main() -> None:
             skipped += 1
             continue
 
-        # Chunk each article independently before splitting so that chunks derived
+        # Chunk each article before dataset splitting so that all chunks derived
         # from the same source document remain grouped together.
         chunks = build_chunks(paragraphs)
         if not chunks:
@@ -272,8 +273,24 @@ def main() -> None:
     val_articles = articles[n_train : n_train + n_val]
     test_articles = articles[n_train + n_val :]
 
-    # Flatten only after the article-level split has been assigned. This preserves
-    # document independence across train/validation/test sets.
+    # VALIDATION: Ensure strict article-level independence across splits
+    # This check enforces that no source document appears in multiple splits.
+    train_ids = {a[0] for a in train_articles}
+    val_ids = {a[0] for a in val_articles}
+    test_ids = {a[0] for a in test_articles}
+
+    assert train_ids.isdisjoint(
+        val_ids
+    ), "CRITICAL: Data leakage detected between train and val"
+    assert train_ids.isdisjoint(
+        test_ids
+    ), "CRITICAL: Data leakage detected between train and test"
+    assert val_ids.isdisjoint(
+        test_ids
+    ), "CRITICAL: Data leakage detected between val and test"
+
+    # Flatten only after the article-level split is fixed. This preserves
+    # document-level independence across train/validation/test sets.
     train_docs = [chunk for _, chunks in train_articles for chunk in chunks]
     val_docs = [chunk for _, chunks in val_articles for chunk in chunks]
     test_docs = [chunk for _, chunks in test_articles for chunk in chunks]
